@@ -18,10 +18,7 @@ import {
   SHOTS_OPTIONS,
   MAX_INPUT,
 } from "@/lib/params";
-
-// 免费使用次数上限（简单版：仅按本次会话前端计数，防止 API 被刷爆）
-// TODO: 之后升级为按设备/账号的真实限制
-const FREE_LIMIT = 5;
+import { FREE_LIMIT, readUsedCount, bumpUsedCount } from "@/lib/usage";
 
 // 一次生成的历史记录（仅存于本次会话内存，不落 localStorage）
 interface HistoryEntry {
@@ -47,10 +44,15 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [copiedNL, setCopiedNL] = useState(false);
 
-  // 本次会话已生成次数
+  // 已生成次数（与设备绑定，存于 localStorage，刷新不重置）
   const [usedCount, setUsedCount] = useState(0);
   const remaining = Math.max(0, FREE_LIMIT - usedCount);
   const reachedLimit = usedCount >= FREE_LIMIT;
+
+  // 挂载后从 localStorage 读取该设备已用次数
+  useEffect(() => {
+    setUsedCount(readUsedCount());
+  }, []);
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [examplesOpen, setExamplesOpen] = useState(false);
@@ -111,8 +113,8 @@ export default function Home() {
           shots: s,
         });
         setResult(res.prompt);
-        // 每次实际生成都计入免费额度（防刷）
-        setUsedCount((n) => n + 1);
+        // 每次实际生成都计入免费额度并持久化到设备（防普通刷新白嫖）
+        setUsedCount(bumpUsedCount());
         // 只有成功的结果才进历史
         if (!res.error && res.prompt.trim()) {
           setHistory((prev) => [
