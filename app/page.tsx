@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ParamGroup from "@/components/ParamGroup";
 import ResultBlock from "@/components/ResultBlock";
 import Modal from "@/components/Modal";
+import Spinner from "@/components/Spinner";
 import {
   generatePrompt,
   recommendParams,
@@ -347,9 +348,10 @@ export default function Home() {
                   type="button"
                   onClick={doRecommend}
                   disabled={recommending || loading || !input.trim()}
-                  className="rounded border border-hairline px-2.5 py-1 text-[12px] text-ink/80 transition-colors hover:border-muted disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded border border-hairline px-2.5 py-1 text-[12px] text-ink/80 transition-colors hover:border-muted disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {recommending ? "推荐中…" : "AI 帮我推荐参数"}
+                  {recommending && <Spinner />}
+                  <span>{recommending ? "推荐中…" : "AI 帮我推荐参数"}</span>
                 </button>
               </div>
             </div>
@@ -433,7 +435,8 @@ export default function Home() {
             disabled={loading || recommending || reachedLimit}
             className="flex w-full items-center justify-center gap-3 rounded bg-vermilion px-4 py-3 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>
+            <span className="flex items-center gap-2">
+              {(recommending || loading) && <Spinner />}
               {reachedLimit
                 ? "免费次数已用完"
                 : recommending
