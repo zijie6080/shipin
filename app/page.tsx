@@ -14,6 +14,10 @@ import {
   MAX_INPUT,
 } from "@/lib/params";
 
+// 免费使用次数上限（简单版：仅按本次会话前端计数，防止 API 被刷爆）
+// TODO: 之后升级为按设备/账号的真实限制
+const FREE_LIMIT = 5;
+
 // 一次生成的历史记录（仅存于本次会话内存，不落 localStorage）
 interface HistoryEntry {
   id: string;
@@ -38,6 +42,11 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [copiedNL, setCopiedNL] = useState(false);
 
+  // 本次会话已生成次数
+  const [usedCount, setUsedCount] = useState(0);
+  const remaining = Math.max(0, FREE_LIMIT - usedCount);
+  const reachedLimit = usedCount >= FREE_LIMIT;
+
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -49,13 +58,15 @@ export default function Home() {
   );
 
   const handleGenerate = useCallback(async () => {
-    if (loading) return;
+    if (loading || reachedLimit) return;
     setLoading(true);
     setCopied(false);
     setCopiedNL(false);
     try {
       const res = await generatePrompt(input, { camera, lighting, shots });
       setResult(res.prompt);
+      // 每次实际生成都计入免费额度（防刷）
+      setUsedCount((n) => n + 1);
       // 只有成功的结果才进历史
       if (!res.error && res.prompt.trim()) {
         setHistory((prev) => [
@@ -77,7 +88,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [input, camera, lighting, shots, loading]);
+  }, [input, camera, lighting, shots, loading, reachedLimit]);
 
   // ⌘↩ / Ctrl+↩ 触发生成
   useEffect(() => {
@@ -281,16 +292,49 @@ export default function Home() {
 
           <div className="flex-1" />
 
+          {/* 免费次数提示 */}
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted">免费额度（本次会话）</span>
+            <span className="font-mono">
+              {reachedLimit ? (
+                <span className="text-vermilion">已用完 {FREE_LIMIT}/{FREE_LIMIT}</span>
+              ) : (
+                <span className="text-muted">
+                  还剩 <span className="text-ink">{remaining}</span> / {FREE_LIMIT} 次
+                </span>
+              )}
+            </span>
+          </div>
+
           {/* 主按钮：唯一实心朱砂红 */}
           <button
             type="button"
             onClick={handleGenerate}
-            disabled={loading}
-            className="flex w-full items-center justify-center gap-3 rounded bg-vermilion px-4 py-3 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+            disabled={loading || reachedLimit}
+            className="flex w-full items-center justify-center gap-3 rounded bg-vermilion px-4 py-3 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>{loading ? "生成中…" : "生成提示词"}</span>
-            <span className="font-mono text-xs text-white/70">⌘↩</span>
+            <span>
+              {reachedLimit
+                ? "免费次数已用完"
+                : loading
+                  ? "生成中…"
+                  : "生成提示词"}
+            </span>
+            {!reachedLimit && (
+              <span className="font-mono text-xs text-white/70">⌘↩</span>
+            )}
           </button>
+
+          {/* 达上限后的付费引导占位区 */}
+          {reachedLimit && (
+            <div className="rounded border border-hairline p-4 text-center">
+              <p className="text-[13px] text-ink">免费次数已用完</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                {/* TODO: 之后放付费引导，如加微信 / 扫码解锁更多次数 */}
+                （此处之后放置付费引导：加微信 / 扫码解锁更多生成次数）
+              </p>
+            </div>
+          )}
         </section>
 
         {/* 右栏：生成结果 */}
