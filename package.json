@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "next": "^15.5.20",
+    "openai": "^6.45.0",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^20",
