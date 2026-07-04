@@ -56,3 +56,57 @@ export async function generatePrompt(
     };
   }
 }
+
+// AI 推荐的参数（键名与推荐接口一致）
+export interface RecommendedParams {
+  camera: string; // 运镜方式
+  lighting: string; // 光线氛围
+  shotCount: string; // 镜头数量
+}
+
+export interface RecommendResult {
+  params?: RecommendedParams;
+  error?: boolean;
+  message?: string;
+}
+
+/**
+ * 让 AI 根据一句话灵感推荐参数（运镜/光线/镜头数量）。
+ *
+ * 通过 fetch 调用服务端 /api/recommend，服务端用简短 prompt + deepseek-chat
+ * 返回精简 JSON。不会 reject，失败时返回 error 标记与友好文案。
+ */
+export async function recommendParams(idea: string): Promise<RecommendResult> {
+  try {
+    const res = await fetch("/api/recommend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea }),
+    });
+
+    let data: Partial<RecommendedParams> & { error?: string } = {};
+    try {
+      data = await res.json();
+    } catch {
+      // 响应体不是 JSON
+    }
+
+    if (!res.ok) {
+      return { error: true, message: data.error || "推荐失败，请重试。" };
+    }
+
+    if (!data.camera || !data.lighting || !data.shotCount) {
+      return { error: true, message: "推荐结果异常，请重试。" };
+    }
+
+    return {
+      params: {
+        camera: data.camera,
+        lighting: data.lighting,
+        shotCount: data.shotCount,
+      },
+    };
+  } catch {
+    return { error: true, message: "网络错误，请稍后重试。" };
+  }
+}
