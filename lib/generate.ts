@@ -8,11 +8,23 @@ export interface GenerateParams {
   shots: string; // 镜头数量
 }
 
+// 服务端返回的用量信息（未配置 KV 时 enabled=false）
+export interface Usage {
+  used: number;
+  limit: number;
+  remaining: number;
+  enabled: boolean;
+}
+
 export interface GenerateResult {
   // 输出结果的纯文本（用于复制与展示）
   prompt: string;
   // 是否为错误提示（true 时 prompt 内为友好错误信息）
   error?: boolean;
+  // 是否因服务端限次被拒绝
+  limited?: boolean;
+  // 服务端用量（存在时前端以此为准）
+  usage?: Usage;
 }
 
 /**
@@ -25,16 +37,22 @@ export interface GenerateResult {
  */
 export async function generatePrompt(
   input: string,
-  params: GenerateParams
+  params: GenerateParams,
+  deviceId?: string
 ): Promise<GenerateResult> {
   try {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input, params }),
+      body: JSON.stringify({ input, params, deviceId }),
     });
 
-    let data: { prompt?: string; error?: string } = {};
+    let data: {
+      prompt?: string;
+      error?: string;
+      limited?: boolean;
+      usage?: Usage;
+    } = {};
     try {
       data = await res.json();
     } catch {
@@ -45,15 +63,33 @@ export async function generatePrompt(
       return {
         prompt: data.error || "生成失败，请稍后重试。",
         error: true,
+        limited: data.limited || res.status === 429,
+        usage: data.usage,
       };
     }
 
-    return { prompt: data.prompt ?? "" };
+    return { prompt: data.prompt ?? "", usage: data.usage };
   } catch {
     return {
       prompt: "网络错误：无法连接到生成服务，请检查网络后重试。",
       error: true,
     };
+  }
+}
+
+/**
+ * 读取服务端用量（用于页面初次加载展示）。未配置 KV / 出错时返回 null。
+ */
+export async function fetchUsage(deviceId: string): Promise<Usage | null> {
+  try {
+    const res = await fetch(
+      `/api/usage?deviceId=${encodeURIComponent(deviceId)}`
+    );
+    if (!res.ok) return null;
+    const data: { usage?: Usage } = await res.json();
+    return data.usage ?? null;
+  } catch {
+    return null;
   }
 }
 

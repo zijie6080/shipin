@@ -8,6 +8,7 @@ import Spinner from "@/components/Spinner";
 import {
   generatePrompt,
   recommendParams,
+  fetchUsage,
   type RecommendedParams,
 } from "@/lib/generate";
 import { EXAMPLES } from "@/lib/examples";
@@ -18,7 +19,12 @@ import {
   SHOTS_OPTIONS,
   MAX_INPUT,
 } from "@/lib/params";
-import { FREE_LIMIT, readUsedCount, bumpUsedCount } from "@/lib/usage";
+import {
+  FREE_LIMIT,
+  getDeviceId,
+  readUsedCount,
+  bumpUsedCount,
+} from "@/lib/usage";
 
 // 一次生成的历史记录（仅存于本次会话内存，不落 localStorage）
 interface HistoryEntry {
@@ -44,14 +50,31 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [copiedNL, setCopiedNL] = useState(false);
 
-  // 已生成次数（与设备绑定，存于 localStorage，刷新不重置）
+  // 已生成次数与上限。服务端配置了 KV 时以服务端为准；否则回退 localStorage。
   const [usedCount, setUsedCount] = useState(0);
-  const remaining = Math.max(0, FREE_LIMIT - usedCount);
-  const reachedLimit = usedCount >= FREE_LIMIT;
+  const [limit, setLimit] = useState(FREE_LIMIT);
+  const [serverLimited, setServerLimited] = useState(false);
+  const remaining = Math.max(0, limit - usedCount);
+  const reachedLimit = usedCount >= limit;
 
-  // 挂载后从 localStorage 读取该设备已用次数
+  // 挂载后确定设备 ID，并优先读取服务端用量（配置了 KV 时），否则用 localStorage
   useEffect(() => {
-    setUsedCount(readUsedCount());
+    const id = getDeviceId();
+    let cancelled = false;
+    (async () => {
+      const usage = await fetchUsage(id);
+      if (cancelled) return;
+      if (usage && usage.enabled) {
+        setServerLimited(true);
+        setLimit(usage.limit);
+        setUsedCount(usage.used);
+      } else {
+        setUsedCount(readUsedCount());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -107,14 +130,20 @@ export default function Home() {
       setCopied(false);
       setCopiedNL(false);
       try {
-        const res = await generatePrompt(input, {
-          camera: c,
-          lighting: l,
-          shots: s,
-        });
+        const res = await generatePrompt(
+          input,
+          { camera: c, lighting: l, shots: s },
+          getDeviceId()
+        );
         setResult(res.prompt);
-        // 每次实际生成都计入免费额度并持久化到设备（防普通刷新白嫖）
-        setUsedCount(bumpUsedCount());
+        // 用量对账：服务端配了 KV 就以服务端为准，否则回退 localStorage 计数
+        if (res.usage && res.usage.enabled) {
+          setServerLimited(true);
+          setLimit(res.usage.limit);
+          setUsedCount(res.usage.used);
+        } else if (!serverLimited) {
+          setUsedCount(bumpUsedCount());
+        }
         // 只有成功的结果才进历史
         if (!res.error && res.prompt.trim()) {
           setHistory((prev) => [
@@ -137,7 +166,7 @@ export default function Home() {
         setLoading(false);
       }
     },
-    [input]
+    [input, serverLimited]
   );
 
   const handleGenerate = useCallback(async () => {
@@ -418,13 +447,17 @@ export default function Home() {
 
           {/* 免费次数提示 */}
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted">免费额度（本次会话）</span>
+            <span className="text-muted">
+              免费额度{serverLimited ? "" : "（本次会话）"}
+            </span>
             <span className="font-mono">
               {reachedLimit ? (
-                <span className="text-vermilion">已用完 {FREE_LIMIT}/{FREE_LIMIT}</span>
+                <span className="text-vermilion">
+                  已用完 {limit}/{limit}
+                </span>
               ) : (
                 <span className="text-muted">
-                  还剩 <span className="text-ink">{remaining}</span> / {FREE_LIMIT} 次
+                  还剩 <span className="text-ink">{remaining}</span> / {limit} 次
                 </span>
               )}
             </span>
